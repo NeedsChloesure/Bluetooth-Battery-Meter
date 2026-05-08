@@ -25,6 +25,12 @@
           </object>
         </child>
         <child>
+          <object class="AdwSwitchRow" id="display_mode">
+            <property name="title" translatable="yes">Open indicator menu on hover</property>
+            <property name="subtitle" translatable="yes">On: open the pop-up after hover delay. Off: open only on click.</property>
+          </object>
+        </child>
+        <child>
           <object class="AdwActionRow" id="level_indicator_type_row">
             <property name="title" translatable="yes">Battery Level Indicator Type</property>
             <property name="subtitle" translatable="yes">Dots offer better visibility</property>

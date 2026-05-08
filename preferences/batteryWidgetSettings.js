@@ -100,6 +100,7 @@ export const  BatteryWidgetSettings = GObject.registerClass({
         'indicator_widget_note_row',
         'disable_level_in_icon',
         'enable_battery_indicator_text',
+        'display_mode',
         'level_indicator_type_row',
         'level_indicator_type',
         'level_bar_position_row',
@@ -124,6 +125,12 @@ export const  BatteryWidgetSettings = GObject.registerClass({
         settings.bind(
             'enable-battery-indicator-text',
             this._enable_battery_indicator_text,
+            'active',
+            Gio.SettingsBindFlags.DEFAULT
+        );
+        settings.bind(
+            'enable-on-hover-mode',
+            this._display_mode,
             'active',
             Gio.SettingsBindFlags.DEFAULT
         );
@@ -222,6 +229,7 @@ export const  BatteryWidgetSettings = GObject.registerClass({
     _updateIndicatorRowVisibility() {
         const indicatorType = this._settings.get_int('indicator-type');
         const panelSingleIndicator = this._settings.get_boolean('panel-button-single-indicator');
+        const systemIndicatorEnabled = indicatorType === 1;
         const settingsVisible = indicatorType === 1 ||
                         indicatorType === 2 && !panelSingleIndicator;
 
@@ -229,6 +237,7 @@ export const  BatteryWidgetSettings = GObject.registerClass({
             this._indicator_widget_note_row.visible = false;
             this._disable_level_in_icon.visible = true;
             this._enable_battery_indicator_text.visible = true;
+            this._display_mode.visible = systemIndicatorEnabled;
             this._level_indicator_type_row.visible = true;
 
             this._level_bar_position_row.visible =
@@ -247,6 +256,7 @@ export const  BatteryWidgetSettings = GObject.registerClass({
             this._indicator_widget_note_row.visible = true;
             this._disable_level_in_icon.visible = false;
             this._enable_battery_indicator_text.visible = false;
+            this._display_mode.visible = false;
             this._level_indicator_type_row.visible = false;
             this._level_bar_position_row.visible = false;
             this._indicator_size.visible = false;
