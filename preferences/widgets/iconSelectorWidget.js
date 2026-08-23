@@ -4,7 +4,7 @@ import Gtk from 'gi://Gtk';
 import Adw from 'gi://Adw';
 
 export const IconSelectorWidget = GObject.registerClass({
-    GTypeName: 'BBM_IconSelectorWidget',
+    GTypeName: 'BluetoothBatteryMeter_IconSelectorWidget',
     Properties: {
         'selected-icon': GObject.ParamSpec.string(
             'selected-icon',
@@ -24,6 +24,7 @@ export const IconSelectorWidget = GObject.registerClass({
 }, class IconSelectorWidget extends Adw.PreferencesGroup {
     _init(params = {}) {
         const {
+            gtxt,
             grpTitle = '',
             rowTitle = '',
             rowSubtitle = '',
@@ -31,9 +32,128 @@ export const IconSelectorWidget = GObject.registerClass({
             initialIcon = '',
             caseIconList = [],
             initialCaseIcon = '',
+            mac = '',
+            fw = '',
+            serial = '',
+            lSn = '',
+            rSn = '',
+            caseSn = '',
         } = params;
 
         super._init({title: grpTitle});
+
+        const _ = gtxt;
+
+        const infoButton = new Gtk.MenuButton({
+            icon_name: 'bbm-help-about-symbolic',
+            valign: Gtk.Align.CENTER,
+            css_classes: ['flat'],
+            tooltip_text: _('Device information'),
+        });
+
+        const infoPopOver = new Gtk.Popover({
+            has_arrow: true,
+            position: Gtk.PositionType.BOTTOM,
+        });
+
+        const infoBox = new Gtk.Box({
+            orientation: Gtk.Orientation.VERTICAL,
+            spacing: 16,
+            margin_top: 8,
+            margin_bottom: 8,
+            margin_start: 10,
+            margin_end: 10,
+        });
+
+        const title = new Gtk.Label({
+            label: _('Device information'),
+            halign: Gtk.Align.CENTER,
+            css_classes: ['heading'],
+        });
+
+        infoBox.append(title);
+
+        const addInfo = (label, value) => {
+            if (!value)
+                return;
+
+            const box = new Gtk.Box({
+                orientation: Gtk.Orientation.VERTICAL,
+                spacing: 2,
+                halign: Gtk.Align.CENTER,
+            });
+
+            const title = new Gtk.Label({
+                label,
+                halign: Gtk.Align.CENTER,
+                css_classes: ['caption-heading'],
+            });
+
+            const valueLabel = new Gtk.Label({
+                label: value,
+                halign: Gtk.Align.CENTER,
+                css_classes: ['caption', 'dimmed'],
+            });
+
+            box.append(title);
+            box.append(valueLabel);
+            infoBox.append(box);
+        };
+
+        addInfo(_('Mac Address'), mac);
+
+        if (fw)
+            addInfo(_('Firmware Version'), fw);
+
+        if (lSn || rSn || caseSn) {
+            const serialBox = new Gtk.Box({
+                orientation: Gtk.Orientation.VERTICAL,
+                spacing: 2,
+                halign: Gtk.Align.CENTER,
+            });
+
+            const serialTitle = new Gtk.Label({
+                label: _('Serial Number'),
+                halign: Gtk.Align.CENTER,
+                css_classes: ['caption-heading'],
+            });
+
+            serialBox.append(serialTitle);
+
+            if (lSn) {
+                serialBox.append(new Gtk.Label({
+                    label: `L: ${lSn}`,
+                    halign: Gtk.Align.CENTER,
+                    css_classes: ['caption', 'dimmed'],
+                }));
+            }
+
+            if (rSn) {
+                serialBox.append(new Gtk.Label({
+                    label: `R: ${rSn}`,
+                    halign: Gtk.Align.CENTER,
+                    css_classes: ['caption', 'dimmed'],
+                }));
+            }
+
+            if (caseSn) {
+                serialBox.append(new Gtk.Label({
+                    label: `Case: ${caseSn}`,
+                    halign: Gtk.Align.CENTER,
+                    css_classes: ['caption', 'dimmed'],
+                }));
+            }
+
+            infoBox.append(serialBox);
+        } else if (serial) {
+            addInfo(_('Serial Number'), serial);
+        }
+
+
+        infoPopOver.set_child(infoBox);
+        infoButton.set_popover(infoPopOver);
+
+        this.set_header_suffix(infoButton);
 
         this._supportedIcons = iconList;
         this._caseIcons = caseIconList;

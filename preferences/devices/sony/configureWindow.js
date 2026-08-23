@@ -8,8 +8,9 @@ import {
 import {DropDownRowWidget} from './../../widgets/dropDownRowWidget.js';
 import {SliderRowWidget} from './../../widgets/sliderRowWidget.js';
 import {EqualizerWidget} from './../../widgets/equalizerWidget.js';
-import {CheckBoxesGroupWidget} from './../../widgets/checkBoxesGroupWidget.js';
+import {CheckBoxesRowWidget} from './../../widgets/checkBoxesRowWidget.js';
 import {IconSelectorWidget} from './../../widgets/iconSelectorWidget.js';
+import {DeviceManagementRow} from './../../widgets/deviceMgmtRowWidget.js';
 import {
     SonyConfiguration, EqualizerPreset, ListeningMode, BgmDistance, ButtonModes, AutoPowerOffTime
 
@@ -22,18 +23,47 @@ export const ConfigureWindow = GObject.registerClass({
         super._init({
             default_width: 650,
             default_height: 650,
+            width_request: 320,
+            height_request: 100,
             modal,
             transient_for: parentWindow ?? null,
+        });
+
+        this._isCompactMode = false;
+
+        this._breakpointCompact = new Adw.Breakpoint({
+            condition: Adw.BreakpointCondition.parse('max-width: 500px'),
+        });
+
+        this._breakpointExpanded = new Adw.Breakpoint({
+            condition: Adw.BreakpointCondition.parse('min-width: 550px'),
+        });
+
+        this.add_breakpoint(this._breakpointCompact);
+        this.add_breakpoint(this._breakpointExpanded);
+
+        this._breakpointCompact.connect('apply', () => {
+            this._isCompactMode = true;
+            this._updateCompactStatus();
+        });
+
+        this._breakpointExpanded.connect('apply', () => {
+            this._isCompactMode = false;
+            this._updateCompactStatus();
         });
 
         this._settings = settings;
         this._devicePath = devicePath;
 
-        const pathsString = settings.get_strv('sony-list').map(JSON.parse);
+        const pathsString = this._settings.get_strv('sony-list').map(JSON.parse);
         this._settingsItems = pathsString.find(info => info.path === devicePath);
+        if (!this._settingsItems)
+            return;
+
         this.title = this._settingsItems.alias;
 
         const modelData = SonyConfiguration.find(cfg => cfg.pattern.test(this._settingsItems.name));
+        this._modelData = modelData;
 
         const toolViewBar = new Adw.ToolbarView();
         const headerBar = new Adw.HeaderBar({
@@ -46,9 +76,6 @@ export const ConfigureWindow = GObject.registerClass({
         toolViewBar.set_content(page);
         this.set_content(toolViewBar);
 
-        const aliasGroup = new Adw.PreferencesGroup({title: `MAC: ${mac}`});
-        page.add(aliasGroup);
-
         const iconList = modelData.batteryDual ? supportedAudioDualIcons
             : supportedAudioSingleIcons;
 
@@ -60,6 +87,7 @@ export const ConfigureWindow = GObject.registerClass({
         }
 
         const iconSelector = new IconSelectorWidget({
+            gtxt: _,
             grpTitle: _('Icon'),
             rowTitle: _('Select Icon'),
             rowSubtitle: _('Select the icon used for the indicator and quick menu'),
@@ -67,6 +95,8 @@ export const ConfigureWindow = GObject.registerClass({
             initialIcon: this._settingsItems['icon'],
             caseIconList,
             initialCaseIcon,
+            mac,
+            fw: this._settingsItems['fw-version'],
         });
 
         iconSelector.connect('notify::selected-icon', () => {
@@ -169,8 +199,6 @@ export const ConfigureWindow = GObject.registerClass({
                 initialValue: this._settingsItems['bgm-distance'],
             });
 
-            this._updateMenuSensitivity();
-
             this._bgmDistanceDropdown.connect('notify::selected-item', () => {
                 const val = this._bgmDistanceDropdown.selected_item;
                 this._updateGsettings('bgm-distance', val);
@@ -218,16 +246,18 @@ export const ConfigureWindow = GObject.registerClass({
                 options: eqPresets,
                 values: this._eqPresetValues,
                 initialValue: this._settingsItems['eq-preset'],
+                hasButton: true,
+                buttonIcon: 'bbm-eq-symbolic',
+                buttonTooltip: _('Custom Equalizer'),
+                buttonVisibleFor: [EqualizerPreset.MANUAL, EqualizerPreset.CUSTOM_1,
+                    EqualizerPreset.CUSTOM_2],
             });
 
             this._eqPresetDropdown.connect('notify::selected-item', () => {
                 this._updateGsettings('eq-preset', this._eqPresetDropdown.selected_item);
-                this._updateEqCustomRowVisibility();
             });
 
             equalizerGroup.add(this._eqPresetDropdown);
-
-            this._equalizerCustomRow = new Adw.ActionRow({title: _('Custom Equalizer')});
 
             const sixBandFreqs = [_('Bass'), _('400'), _('1k'), _('2.5k'), _('6.3k'), _('16k')];
             const tenBandFreqs = [_('31'), _('63'), _('125'), _('250'), _('500'),
@@ -236,16 +266,24 @@ export const ConfigureWindow = GObject.registerClass({
             const range = modelData.equalizerTenBands ? 6 : 10;
             const initialValues = this._settingsItems['eq-custom'];
 
-            this._eq = new EqualizerWidget(freqs, initialValues, range);
+            this._eq = new EqualizerWidget({
+                freqs,
+                initialValues,
+                range,
+                topBarTitle: _('Frequency (Hz)'),
+                bottomBarTitle: _('Gain (dB)'),
+            });
 
             this._eq.connect('eq-changed', (_w, arr) => {
                 this._updateGsettings('eq-custom', arr);
             });
 
-            this._equalizerCustomRow.set_child(this._eq);
-            this._updateEqCustomRowVisibility();
-            equalizerGroup.add(this._equalizerCustomRow);
+            this._eqPresetDropdown.connect('button-clicked', () => this._eq.present(this));
+
             page.add(equalizerGroup);
+
+            if (modelData.listeningMode)
+                this._updateMenuSensitivity();
         }
 
         if (modelData.audioUpsampling) {
@@ -266,12 +304,10 @@ export const ConfigureWindow = GObject.registerClass({
             upscalingGrp.add(this._upscalingSwitchRow);
         }
 
-        if (modelData.buttonModesLeftRight || modelData.ambientSoundControlButtonMode) {
+        if (modelData.buttonModesLeftRight) {
             this._btnTchGroup = new Adw.PreferencesGroup({title: _('Button/Touch Settings')});
             page.add(this._btnTchGroup);
-        }
 
-        if (modelData.buttonModesLeftRight) {
             const buttonModeMap = {
                 amb: [_('Ambient Sound Control'), ButtonModes.AMBIENT_SOUND_CONTROL],
                 ambqa: [_('Ambient Sound Control / Quick Access'),
@@ -325,14 +361,18 @@ export const ConfigureWindow = GObject.registerClass({
 
 
         if (modelData.ambientSoundControlButtonMode) {
+            const ancToggleButtonGrp = new Adw.PreferencesGroup({
+                title: _('ANC Button Configuration'),
+            });
+            page.add(ancToggleButtonGrp);
+
             const items = [
                 {name: _('Noise Cancellation'), icon: 'bbm-anc-on-symbolic'},
                 {name: _('Ambient'), icon: 'bbm-transperancy-symbolic'},
                 {name: _('Off'), icon: 'bbm-anc-off-symbolic'},
             ];
 
-            this._ancToggleButtonWidget = new CheckBoxesGroupWidget({
-                groupTitle: _('ANC Button Configuration'),
+            this._ancToggleButtonWidget = new CheckBoxesRowWidget({
                 rowTitle: _('[NC/AMB] Button Settings'),
                 rowSubtitle: _('Select the modes to toggle when the button is pressed'),
                 items,
@@ -340,12 +380,14 @@ export const ConfigureWindow = GObject.registerClass({
                 initialValue: this._settingsItems['amb-btn-mode'],
             });
 
+            this._ancToggleButtonWidget.compact_mode = this._isCompactMode;
+
             this._ancToggleButtonWidget.connect('notify::toggled-value', () => {
                 const val = this._ancToggleButtonWidget.toggled_value;
                 this._updateGsettings('amb-btn-mode', val);
             });
 
-            this._btnTchGroup.add(this._ancToggleButtonWidget);
+            ancToggleButtonGrp.add(this._ancToggleButtonWidget);
         }
 
         if (modelData.voiceNotifications) {
@@ -385,6 +427,8 @@ export const ConfigureWindow = GObject.registerClass({
                     range: [-2, 2, 1],
                     snapOnStep: true,
                 });
+
+                this._voiceNotificationsVolume.compact_mode = this._isCompactMode;
 
                 this._voiceNotificationsVolume.sensitive = this._voiceNotificationsSwitchRow.active;
                 this._voiceNotificationsVolume.connect('notify::value', () => {
@@ -434,7 +478,6 @@ export const ConfigureWindow = GObject.registerClass({
             if (modelData.automaticPowerOffByTime) {
                 this._autoPowerOffLabels = [
                     _('After 5 minutes'),
-                    _('After 15 minutes'),
                     _('After 30 minutes'),
                     _('After 1 hour'),
                     _('After 3 hours'),
@@ -442,14 +485,13 @@ export const ConfigureWindow = GObject.registerClass({
 
                 this._autoPowerOffValues = [
                     AutoPowerOffTime.AFTER_5_MIN,
-                    AutoPowerOffTime.AFTER_15_MIN,
                     AutoPowerOffTime.AFTER_30_MIN,
                     AutoPowerOffTime.AFTER_1_HOUR,
                     AutoPowerOffTime.AFTER_3_HOUR,
                 ];
 
                 this._autoPowerOffDropdown = new DropDownRowWidget({
-                    title: _('Auto Power Off'),
+                    title: _('Automatically Power Off When Not Worn'),
                     options: this._autoPowerOffLabels,
                     values: this._autoPowerOffValues,
                     initialValue: this._settingsItems['auto-power-time'],
@@ -464,8 +506,10 @@ export const ConfigureWindow = GObject.registerClass({
             }
         }
 
-        settings.connect('changed::sony-list', () => {
-            const updatedList = settings.get_strv('sony-list').map(JSON.parse);
+        this._addDevMgmtSetting(_, page);
+
+        const settingSignalId = this._settings.connect('changed::sony-list', () => {
+            const updatedList = this._settings.get_strv('sony-list').map(JSON.parse);
             this._settingsItems = updatedList.find(info => info.path === devicePath);
             if (!this._settingsItems)
                 return;
@@ -486,7 +530,6 @@ export const ConfigureWindow = GObject.registerClass({
             if (modelData.equalizerSixBands || modelData.equalizerTenBands)  {
                 this._eqPresetDropdown.selected_item = this._settingsItems['eq-preset'];
                 this._eq.setValues(this._settingsItems['eq-custom']);
-                this._updateEqCustomRowVisibility();
             }
 
             if (modelData.audioUpsampling)
@@ -515,6 +558,29 @@ export const ConfigureWindow = GObject.registerClass({
 
             if (modelData.automaticPowerOffByTime)
                 this._autoPowerOffDropdown.selected_item = this._settingsItems['auto-power-time'];
+
+            if (this._dualConnSwitch) {
+                this._dualConnSwitch.pair_mode = this._settingsItems['pairing-mode'];
+                const deviceInfo = this._settingsItems['dev-mgmt'];
+                this._dualConnSwitch?.updateDevices(deviceInfo);
+                const routeInfo = this._settingsItems['active-dev'];
+                this._dualConnSwitch?.updateRouteDevice(routeInfo);
+                this._dualConnSwitch.active_fixed = this._settingsItems['active-fix'];
+            }
+        });
+
+        this.connect('close-request', () => {
+            this._eq?.destroy();
+            this._eq = null;
+            this._voiceNotificationsVolume?.destroy();
+            this._voiceNotificationsVolume = null;
+
+            if (settingSignalId && settings)
+                settings.disconnect(settingSignalId);
+
+            this._settings = null;
+
+            return false;
         });
     }
 
@@ -541,21 +607,65 @@ export const ConfigureWindow = GObject.registerClass({
 
         if (this._eqPresetDropdown)
             this._eqPresetDropdown.sensitive = isStdMode;
-
-        if (this._equalizerCustomRow)
-            this._equalizerCustomRow.sensitive = isStdMode;
     }
 
-    _updateEqCustomRowVisibility() {
-        if (!this._equalizerCustomRow)
+    _addDevMgmtSetting(_, page) {
+        if (!this._modelData.dualConnection)
             return;
 
-        const val = this._eqPresetDropdown.selected_item;
+        const devMgmtGroup = new Adw.PreferencesGroup({title: _('Connection Management')});
+        page.add(devMgmtGroup);
 
-        this._equalizerCustomRow.visible = [
-            EqualizerPreset.MANUAL,
-            EqualizerPreset.CUSTOM_1,
-            EqualizerPreset.CUSTOM_2,
-        ].includes(val);
-    };
+        const hasRoutingIndicator = this._modelData.dualConnection?.hasRoutingIndicator ?? false;
+        const hasRoutingControl = this._modelData.dualConnection?.hasRoutingControl ?? false;
+        const hasActiveFix = this._modelData.dualConnection?.hasActiveFix ?? false;
+
+        const deviceInfo = this._settingsItems['dev-mgmt'];
+
+        const currentActiveRoute = hasRoutingIndicator || hasRoutingControl
+            ? this._settingsItems['active-dev'] : '';
+
+        const deviceManagementConfig = {
+            maxConnected: this._modelData.maxConnected ?? 2,
+            hasMultipointSwitch: false,
+            hasPairMode: true,
+            hasRoutingIndicator,
+            hasRoutingControl,
+            hasActiveFix,
+            showMac: true,
+        };
+
+        this._dualConnSwitch = new DeviceManagementRow(this, _, deviceInfo,
+            '', currentActiveRoute, deviceManagementConfig);
+
+        this._dualConnSwitch.pair_mode = this._settingsItems['pairing-mode'];
+
+        this._dualConnSwitch.connect('notify::pair-mode', () => {
+            this._updateGsettings('pairing-mode', this._dualConnSwitch.pair_mode);
+        });
+
+
+        if (hasActiveFix) {
+            this._dualConnSwitch.active_fixed = this._settingsItems['active-fix'];
+
+            this._dualConnSwitch.connect('notify::active-fixed', () => {
+                this._updateGsettings('active-fix', this._dualConnSwitch.active_fixed);
+            });
+        }
+
+        const actionData = this._settingsItems['dev-mgmt-action'];
+        this._seq = actionData?.seq ?? 0;
+
+        this._dualConnSwitch.connect('device-action', (_row, action, id) => {
+            const data = {seq: this._seq ^= 1, action, id};
+            this._updateGsettings('dev-mgmt-action', data);
+        });
+
+        devMgmtGroup.add(this._dualConnSwitch);
+    }
+
+    _updateCompactStatus() {
+        this._ancToggleButtonWidget?.set_property('compact-mode', this._isCompactMode);
+        this._voiceNotificationsVolume?.set_property('compact-mode', this._isCompactMode);
+    }
 });

@@ -12,6 +12,13 @@ import {Device} from './preferences/device.js';
 import {UpowerDevices} from './preferences/upowerDevices.js';
 import {Airpods} from './preferences/devices/airpods/devicePrefs.js';
 import {Sony} from './preferences/devices/sony/devicePrefs.js';
+import {GalaxyBuds} from './preferences/devices/galaxyBuds/devicePrefs.js';
+import {NothingBuds} from './preferences/devices/nothingBuds/devicePrefs.js';
+import {GoogleBuds} from './preferences/devices/googleBuds/devicePrefs.js';
+import {BoseBuds} from './preferences/devices/boseBuds/devicePrefs.js';
+import {RedmiBuds} from './preferences/devices/redmiBuds/devicePrefs.js';
+import {SenhBuds} from './preferences/devices/senhBuds/devicePrefs.js';
+import {Gfps} from './preferences/devices/gfps/devicePrefs.js';
 import {GattBas} from './preferences/gattBas.js';
 import {About} from './preferences/about.js';
 
@@ -25,16 +32,10 @@ export default class BluetoothBatteryMeterPrefs extends ExtensionPreferences {
         const iconTheme = Gtk.IconTheme.get_for_display(window.get_display());
         const iconsDirectory = this.dir.get_child('icons').get_path();
         iconTheme.add_search_path(iconsDirectory);
+        this._pages = [];
 
-        const useNavigationSplitView = true;
-        if (useNavigationSplitView) {
-            window.set_default_size(900, 700);
-            this._switchToNavigationSplitViews(window);
-        } else {
-            window.set_default_size(650, 700);
-            this._toastOverlay = null;
-            this._addPage = (PreferencesPage, ...args) => window.add(new PreferencesPage(...args));
-        }
+        window.set_default_size(900, 700);
+        this._switchToNavigationSplitViews(window);
 
         const settings = this.getSettings();
         this._addPage(QuickSettings, settings);
@@ -44,8 +45,23 @@ export default class BluetoothBatteryMeterPrefs extends ExtensionPreferences {
         this._addPage(UpowerDevices, settings);
         this._addPage(Airpods, settings);
         this._addPage(Sony, settings);
+        this._addPage(GalaxyBuds, settings);
+        this._addPage(NothingBuds, settings);
+        this._addPage(GoogleBuds, settings);
+        this._addPage(BoseBuds, settings);
+        this._addPage(RedmiBuds, settings);
+        this._addPage(SenhBuds, settings);
+        this._addPage(Gfps, settings);
         this._addPage(GattBas, settings);
         this._addPage(About, this);
+
+        window.connect('close-request', () => {
+            for (const page of this._pages)
+                page?.destroy?.();
+
+            this._pages = [];
+            return false;
+        });
     }
 
     _switchToNavigationSplitViews(window) {
@@ -53,7 +69,6 @@ export default class BluetoothBatteryMeterPrefs extends ExtensionPreferences {
         const dummyPrefsPage = new Adw.PreferencesPage();
         window.add(dummyPrefsPage);
 
-        // Add AdwNavigationSplitView and componenents
         const splitView = new Adw.NavigationSplitView({
             hexpand: true,
             vexpand: true,
@@ -64,13 +79,12 @@ export default class BluetoothBatteryMeterPrefs extends ExtensionPreferences {
             height_request: 100,
         });
         const breakpoint = new Adw.Breakpoint();
-        breakpoint.set_condition(Adw.BreakpointCondition.parse('max-width: 565px'));
+        breakpoint.set_condition(Adw.BreakpointCondition.parse('max-width: 610px'));
         breakpoint.add_setter(splitView, 'collapsed', true);
         breakpointBin.add_breakpoint(breakpoint);
         breakpointBin.set_child(splitView);
         window.set_content(breakpointBin);
 
-        // AdwNavigationSplitView Sidebar configuration
         const splitViewSidebar = new Adw.NavigationPage({
             title: _('Bluetooth Battery Meter'),
         });
@@ -79,13 +93,19 @@ export default class BluetoothBatteryMeterPrefs extends ExtensionPreferences {
         const sidebarBin = new Adw.Bin();
         this._sidebarListBox = new Gtk.ListBox();
         this._sidebarListBox.add_css_class('navigation-sidebar');
-        sidebarBin.set_child(this._sidebarListBox);
+        const sidebarScrolledWindow = new Gtk.ScrolledWindow({
+            hscrollbar_policy: Gtk.PolicyType.NEVER,
+            vscrollbar_policy: Gtk.PolicyType.AUTOMATIC,
+            vexpand: true,
+            hexpand: true,
+        });
+        sidebarScrolledWindow.set_child(this._sidebarListBox);
+        sidebarBin.set_child(sidebarScrolledWindow);
         sidebarToolbar.set_content(sidebarBin);
         sidebarToolbar.add_top_bar(sidebarHeader);
         splitViewSidebar.set_child(sidebarToolbar);
         splitView.set_sidebar(splitViewSidebar);
 
-        // Content configuration
         const splitViewContent = new Adw.NavigationPage();
         this._contentToastOverlay = new Adw.ToastOverlay();
         const contentToolbar = new Adw.ToolbarView();
@@ -118,6 +138,7 @@ export default class BluetoothBatteryMeterPrefs extends ExtensionPreferences {
                 splitViewContent.set_title(row._title);
                 this._firstPageAdded = true;
             }
+            this._pages.push(page);
         };
 
         this._sidebarListBox.connect('row-activated', (listBox, row) => {

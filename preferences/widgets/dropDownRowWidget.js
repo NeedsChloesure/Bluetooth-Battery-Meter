@@ -1,9 +1,10 @@
+'use strict';
 import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
 import GObject from 'gi://GObject';
 
 export const DropDownRowWidget = GObject.registerClass({
-    GTypeName: 'DropDownRowWidget',
+    GTypeName: 'BluetoothBatteryMeter_DropDownRowWidget',
     Properties: {
         selected_item: GObject.ParamSpec.object(
             'selected-item',
@@ -13,17 +14,27 @@ export const DropDownRowWidget = GObject.registerClass({
             GObject.TYPE_OBJECT
         ),
     },
+    Signals: {
+        'button-clicked': {},
+    },
 }, class DropDownRowWidget extends Adw.ActionRow {
     _init(params = {}) {
         const {
-            title = '',             // Adw Row Title
-            subtitle = '',          // Adw Row Subtitle
-            options = [],           // Array of Options to be Displayed in dropdown
-            values = [],            // Array of Values for the above options
-            initialValue = null,    // Initital Selection
+            title = '',
+            subtitle = '',
+            options = [],
+            values = [],
+            initialValue = null,
+
+            hasButton = false,
+            buttonIcon = 'document-edit-symbolic',
+            buttonTooltip = '',
+            buttonVisibleFor = [],
         } = params;
 
         super._init({title, subtitle});
+
+        this._buttonVisibleFor = buttonVisibleFor;
 
         if (options.length === 0 || values.length === 0) {
             this._values = ['none'];
@@ -41,17 +52,41 @@ export const DropDownRowWidget = GObject.registerClass({
             currentIndex = 0;
 
         this._updatingProgrammatically = false;
+        let box = null;
+
+        if (hasButton) {
+            box = new Gtk.Box({spacing: 8, valign: Gtk.Align.CENTER});
+
+            this._button = new Gtk.Button({
+                icon_name: buttonIcon,
+                tooltip_text: buttonTooltip,
+                valign: Gtk.Align.CENTER,
+                visible: false,
+                css_classes: ['circular'],
+            });
+
+            this._button.connect('clicked', () => this.emit('button-clicked'));
+            box.append(this._button);
+        }
 
         this._dropdown = Gtk.DropDown.new(this._stringList, null);
         this._dropdown.valign = Gtk.Align.CENTER;
         this._dropdown.selected = currentIndex;
-
-        this.add_suffix(this._dropdown);
         this.activatable_widget = this._dropdown;
 
+        if (hasButton) {
+            this._updateButtonVisibility();
+            box.append(this._dropdown);
+            this.add_suffix(box);
+        } else {
+            this.add_suffix(this._dropdown);
+        }
+
         this._dropdown.connect('notify::selected', () => {
+            this._updateButtonVisibility();
             if (this._updatingProgrammatically)
                 return;
+
             this.notify('selected-item');
         });
     }
@@ -66,9 +101,11 @@ export const DropDownRowWidget = GObject.registerClass({
         this._updatingProgrammatically = true;
         this._dropdown.selected = idx === -1 ? 0 : idx;
         this._updatingProgrammatically = false;
+        this._updateButtonVisibility();
     }
 
-    updateList(options = null, values = null, initialValue = null) {
+    updateList(options = [], values = [], initialValue = null,
+        buttonVisibleFor = this._buttonVisibleFor) {
         const currentValue = this.selected_item;
         this._stringList.splice(0, this._stringList.get_n_items(), []);
 
@@ -84,6 +121,20 @@ export const DropDownRowWidget = GObject.registerClass({
         this._updatingProgrammatically = true;
         this._dropdown.selected = currentIndex;
         this._updatingProgrammatically = false;
+        this._buttonVisibleFor = buttonVisibleFor;
+        this._updateButtonVisibility();
+    }
+
+    _updateButtonVisibility() {
+        if (!this._button)
+            return;
+
+        if (this._buttonVisibleFor.length === 0) {
+            this._button.visible = true;
+            return;
+        }
+
+        this._button.visible = this._buttonVisibleFor.includes(this.selected_item);
     }
 });
 
